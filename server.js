@@ -23,6 +23,10 @@ function toNullable(value) {
 }
 
 async function sendAction(action, kwargs) {
+  if (!API_URL) {
+    return "Error: API_URL environment variable is not configured";
+  }
+
   const payloadJson = JSON.stringify({ action, kwargs });
   const payloadB64 = Buffer.from(payloadJson, "utf-8").toString("base64");
 
