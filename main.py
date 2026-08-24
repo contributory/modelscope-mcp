@@ -79,4 +79,4 @@ def write_file(
     )
 
 
-app = mcp.http_app(transport="streamable-http")
+app = mcp.http_app(transport="http")
