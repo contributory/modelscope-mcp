@@ -4,9 +4,9 @@ import os
 from typing import Literal
 
 import requests
-from fastapi import FastAPI
 from fastmcp import FastMCP
 
+# Create the MCP server at import time (entrypoint: main:mcp)
 mcp = FastMCP("ContainerAgent")
 
 # API URL for the Docker container (replace with actual Docker container address if running elsewhere)
@@ -81,19 +81,5 @@ def write_file(
     )
 
 
-# MCP ASGI sub-app. path="/" because it is mounted under /mcp below,
-# so the final MCP endpoint is http://<host>:<port>/mcp
-mcp_app = mcp.http_app(path="/")
-
-# FastAPI app deployable with: uvicorn main:app --host 0.0.0.0 --port 8080
-# The MCP lifespan is REQUIRED, otherwise the streamable-http session
-# manager never initializes and every /mcp request fails.
-app = FastAPI(title="ContainerAgent MCP", lifespan=mcp_app.lifespan)
-
-
-@app.get("/health")
-def health() -> dict[str, str]:
-    return {"status": "ok"}
-
-
-app.mount("/mcp", mcp_app)
+if __name__ == "__main__":
+    mcp.run(transport="streamable-http")
