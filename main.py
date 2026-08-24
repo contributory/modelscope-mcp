@@ -79,5 +79,4 @@ def write_file(
     )
 
 
-if __name__ == "__main__":
-    mcp.run(transport="streamable-http")
+app = mcp.http_app(transport="streamable-http")
