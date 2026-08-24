@@ -42,8 +42,8 @@ USER vscode
 
 EXPOSE 7860
 
-COPY mcpserver.py /opt/aicode/mcpserver.py
+COPY api_server.py /opt/aicode/api_server.py
 
 CMD sudo service ssh start && sudo service nginx start && \
-    PORT=8000 python3 /opt/aicode/mcpserver.py & \
+    PORT=8000 python3 /opt/aicode/api_server.py & \
     websocat -b --exit-on-eof ws-l:127.0.0.1:8001 tcp:127.0.0.1:22

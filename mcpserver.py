@@ -1,30 +1,40 @@
 import os
-import subprocess
+import json
+import base64
+import requests
 from typing import Literal
-
 from fastmcp import FastMCP
 
 mcp = FastMCP("ContainerAgent")
 
+# API URL for the Docker container (replace with actual Docker container address if running elsewhere)
+API_URL = os.environ.get("API_URL", "http://127.0.0.1:8000/action")
+
+def send_action(action: str, kwargs: dict) -> str:
+    payload_dict = {"action": action, "kwargs": kwargs}
+    payload_json = json.dumps(payload_dict)
+    payload_b64 = base64.b64encode(payload_json.encode('utf-8')).decode('utf-8')
+    
+    try:
+        resp = requests.post(API_URL, json={"payload": payload_b64})
+        resp.raise_for_status()
+        resp_data = resp.json()
+        
+        if "response" in resp_data:
+            decoded_resp = base64.b64decode(resp_data["response"]).decode('utf-8')
+            res_dict = json.loads(decoded_resp)
+            if "error" in res_dict:
+                return f"Error: {res_dict['error']}"
+            return res_dict.get("result", "")
+        else:
+            return f"Error: Invalid response format {resp_data}"
+    except Exception as e:
+        return f"Error communicating with API: {e}"
 
 @mcp.tool()
 def execute_command(command: str) -> str:
     """Execute a shell command inside the container and return output."""
-    try:
-        result = subprocess.run(
-            command,
-            shell=True,
-            capture_output=True,
-            text=True,
-            timeout=120,
-            check=False,
-        )
-        return result.stdout + result.stderr
-    except subprocess.TimeoutExpired:
-        return "Command timed out"
-    except OSError as e:
-        return str(e)
-
+    return send_action("execute", {"command": command})
 
 @mcp.tool()
 def read_file(path: str, start_line: int = 1, end_line: int | None = None) -> str:
@@ -32,22 +42,7 @@ def read_file(path: str, start_line: int = 1, end_line: int | None = None) -> st
 
     Line numbers are 1-based. If end_line is omitted, read through EOF.
     """
-    try:
-        if start_line < 1:
-            return "Error: start_line must be at least 1"
-        if end_line is not None and end_line < start_line:
-            return "Error: end_line must be greater than or equal to start_line"
-
-        with open(path, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-
-        if start_line > len(lines) and lines:
-            return f"Error: start_line exceeds file length ({len(lines)} lines)"
-
-        return "".join(lines[start_line - 1 : end_line])
-    except (OSError, UnicodeError) as e:
-        return str(e)
-
+    return send_action("read_file", {"path": path, "start_line": start_line, "end_line": end_line})
 
 @mcp.tool()
 def write_file(
@@ -66,77 +61,14 @@ def write_file(
     only start_line, it replaces from that line through EOF. With both line
     parameters, it replaces the inclusive range.
     """
-    try:
-        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-
-        if start_line is not None and start_line < 1:
-            return "Error: start_line must be at least 1"
-        if end_line is not None and start_line is None:
-            return "Error: start_line is required when end_line is provided"
-        if end_line is not None and start_line is not None and end_line < start_line:
-            return "Error: end_line must be greater than or equal to start_line"
-
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                lines = f.readlines()
-        except FileNotFoundError:
-            lines = []
-
-        if mode == "insert":
-            if end_line is not None:
-                return "Error: end_line is not used in insert mode"
-
-            insert_at = len(lines) if start_line is None else start_line - 1
-            if insert_at > len(lines):
-                return f"Error: start_line exceeds append position ({len(lines) + 1})"
-
-            if content and insert_at > 0 and not lines[insert_at - 1].endswith(("\n", "\r")):
-                lines[insert_at - 1] += "\n"
-
-            insertion = content
-            if insertion and insert_at < len(lines) and not insertion.endswith(("\n", "\r")):
-                insertion += "\n"
-            lines.insert(insert_at, insertion)
-
-            with open(path, "w", encoding="utf-8") as f:
-                f.writelines(lines)
-
-            location = "EOF" if start_line is None else f"before line {start_line}"
-            return f"Successfully inserted content {location} in {path}"
-
-        if start_line is None:
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(content)
-            return f"Successfully replaced the entire file {path}"
-
-        if not lines:
-            if start_line != 1:
-                return "Error: start_line exceeds append position (1)"
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(content)
-            return f"Successfully replaced content from line 1 in {path}"
-
-        if start_line > len(lines):
-            return f"Error: start_line exceeds file length ({len(lines)} lines)"
-
-        replace_through = len(lines) if end_line is None else end_line
-        if replace_through > len(lines):
-            return f"Error: end_line exceeds file length ({len(lines)} lines)"
-
-        replacement = content.splitlines(keepends=True)
-        if replacement and replace_through < len(lines) and not replacement[-1].endswith(("\n", "\r")):
-            replacement[-1] += "\n"
-        lines[start_line - 1 : replace_through] = replacement
-
-        with open(path, "w", encoding="utf-8") as f:
-            f.writelines(lines)
-
-        return f"Successfully replaced lines {start_line}-{replace_through} in {path}"
-    except (OSError, UnicodeError) as e:
-        return str(e)
-
+    return send_action("write_file", {
+        "path": path, 
+        "content": content, 
+        "mode": mode, 
+        "start_line": start_line, 
+        "end_line": end_line
+    })
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "8000"))
-
     mcp.run(transport="streamable-http", host="127.0.0.1", port=port)
