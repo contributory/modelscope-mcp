@@ -1,5 +1,7 @@
 #!/usr/bin/env node
-import express from "express";
+// MCP server "ContainerAgent" - pure node:http, no web framework.
+// Streamable HTTP transport at POST /mcp (stateless).
+import { createServer } from "node:http";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
@@ -125,52 +127,53 @@ function createMcpServer() {
   return mcp;
 }
 
-// Stateless Streamable HTTP transport (matches fastmcp transport="streamable-http"):
-// a fresh server + transport per request.
-const app = express();
-app.use(express.json());
+// Plain node:http server. Stateless mode: a fresh server + transport per
+// request; the transport parses the request body itself.
+const httpServer = createServer(async (req, res) => {
+  let pathname;
+  try {
+    pathname = new URL(req.url, `http://${req.headers.host || "localhost"}`).pathname;
+  } catch {
+    res.writeHead(400).end();
+    return;
+  }
 
-app.post("/mcp", async (req, res) => {
+  if (pathname !== "/mcp") {
+    res.writeHead(404, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ error: `Not found: ${req.method} ${pathname}` }));
+    return;
+  }
+
   try {
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: undefined,
     });
-    const server = createMcpServer();
+    const mcp = createMcpServer();
 
     res.on("close", () => {
       transport.close();
-      server.close();
+      mcp.close();
     });
 
-    await server.connect(transport);
-    await transport.handleRequest(req, res, req.body);
+    await mcp.connect(transport);
+    // The transport reads + parses the raw request stream itself
+    await transport.handleRequest(req, res);
   } catch (e) {
     console.error("Error handling MCP request:", e);
     if (!res.headersSent) {
-      res.status(500).json({
-        jsonrpc: "2.0",
-        error: { code: -32603, message: "Internal server error" },
-        id: null,
-      });
+      res.writeHead(500, { "Content-Type": "application/json" });
+      res.end(
+        JSON.stringify({
+          jsonrpc: "2.0",
+          error: { code: -32603, message: "Internal server error" },
+          id: null,
+        })
+      );
     }
   }
 });
 
-// Reject unsupported methods on the MCP endpoint
-["get", "delete"].forEach((method) => {
-  app[method]("/mcp", async (_req, res) => {
-    res.status(405).json({
-      jsonrpc: "2.0",
-      error: {
-        code: -32000,
-        message: "Method not allowed.",
-      },
-      id: null,
-    });
-  });
-});
-
-app.listen(PORT, HOST, () => {
+httpServer.listen(PORT, HOST, () => {
   console.log(`ContainerAgent MCP server listening on http://${HOST}:${PORT}/mcp`);
   console.log(`Proxying actions to API_URL=${API_URL}`);
 });
