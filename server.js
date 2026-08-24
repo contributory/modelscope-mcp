@@ -11,7 +11,7 @@ const SERVER_VERSION = "1.0.0";
 
 // API URL for the Docker container (replace with the actual container address
 // if running elsewhere)
-const API_URL = process.env.API_URL || "http://127.0.0.1:8000/action";
+const API_URL = process.env.API_URL;
 
 // Bind address/port: Wasmer/Anybuild requires 0.0.0.0 + $PORT (default 8080)
 const HOST = process.env.HOST || "0.0.0.0";
@@ -46,7 +46,9 @@ async function sendAction(action, kwargs) {
     const data = await resp.json();
 
     if ("response" in data) {
-      const decodedResp = Buffer.from(data.response, "base64").toString("utf-8");
+      const decodedResp = Buffer.from(data.response, "base64").toString(
+        "utf-8",
+      );
       const resDict = JSON.parse(decodedResp);
       if ("error" in resDict) {
         return `Error: ${resDict.error}`;
@@ -66,14 +68,17 @@ function createMcpServer() {
   mcp.registerTool(
     "execute_command",
     {
-      description: "Execute a shell command inside the container and return output.",
+      description:
+        "Execute a shell command inside the container and return output.",
       inputSchema: z.object({
         command: z.string(),
       }),
     },
     async ({ command }) => ({
-      content: [{ type: "text", text: await sendAction("execute", { command }) }],
-    })
+      content: [
+        { type: "text", text: await sendAction("execute", { command }) },
+      ],
+    }),
   );
 
   mcp.registerTool(
@@ -98,7 +103,7 @@ function createMcpServer() {
           }),
         },
       ],
-    })
+    }),
   );
 
   mcp.registerTool(
@@ -127,7 +132,7 @@ function createMcpServer() {
           }),
         },
       ],
-    })
+    }),
   );
 
   return mcp;
@@ -138,7 +143,8 @@ function createMcpServer() {
 const httpServer = createServer(async (req, res) => {
   let pathname;
   try {
-    pathname = new URL(req.url, `http://${req.headers.host || "localhost"}`).pathname;
+    pathname = new URL(req.url, `http://${req.headers.host || "localhost"}`)
+      .pathname;
   } catch {
     res.writeHead(400).end();
     return;
@@ -173,13 +179,15 @@ const httpServer = createServer(async (req, res) => {
           jsonrpc: "2.0",
           error: { code: -32603, message: "Internal server error" },
           id: null,
-        })
+        }),
       );
     }
   }
 });
 
 httpServer.listen(PORT, HOST, () => {
-  console.log(`ContainerAgent MCP server listening on http://${HOST}:${PORT}/mcp`);
+  console.log(
+    `ContainerAgent MCP server listening on http://${HOST}:${PORT}/mcp`,
+  );
   console.log(`Proxying actions to API_URL=${API_URL}`);
 });
