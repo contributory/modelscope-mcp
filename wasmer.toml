@@ -1,0 +1,22 @@
+[package]
+name = "contributory/modelscope-mcp"
+version = "0.1.0"
+description = "Description for package modelscope-mcp"
+
+# See more keys and definitions at https://docs.wasmer.io/registry/manifest
+
+[dependencies]
+"python/python" = "*"
+
+[[module]]
+name = "modelscope-mcp"
+source = "modelscope-mcp.wasm"
+abi = "wasi"
+
+[module.interfaces]
+wasi = "0.1.0-unstable"
+
+[[command]]
+name = "modelscope-mcp"
+module = "modelscope-mcp"
+runner = "wasi"
