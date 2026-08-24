@@ -29,7 +29,13 @@ async function sendAction(action, kwargs) {
   try {
     const resp = await fetch(API_URL, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        // The ModelScope gateway (ms.fun / api-inference) blocks requests
+        // without a User-Agent (returns 403). Send a browser-like UA to pass.
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36",
+      },
       body: JSON.stringify({ payload: payloadB64 }),
     });
 
