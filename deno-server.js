@@ -151,7 +151,8 @@ export default async function handler(request) {
 	}
 
 	try {
-		const apiUrl = request.headers.get("X-Api-Url");
+		const url = new URL(request.url);
+		const apiUrl = request.headers.get("X-Api-Url") ?? url.searchParams.get("api_url");
 		const transport = new WebStandardStreamableHTTPServerTransport({
 			sessionIdGenerator: undefined,
 			enableJsonResponse: true,
