@@ -26,11 +26,9 @@ function decodeBase64(value) {
 	return new TextDecoder().decode(bytes);
 }
 
-async function sendAction(action, kwargs) {
-	const apiUrl = Deno.env.get("API_URL");
-
+async function sendAction(action, kwargs, apiUrl) {
 	if (!apiUrl) {
-		return "Error: API_URL environment variable is not configured";
+		return "Error: X-Api-Url header is not configured";
 	}
 
 	const payload = encodeBase64(JSON.stringify({ action, kwargs }));
@@ -67,7 +65,7 @@ async function sendAction(action, kwargs) {
 	}
 }
 
-function createMcpServer() {
+function createMcpServer(apiUrl) {
 	const mcp = new McpServer({ name: SERVER_NAME, version: SERVER_VERSION });
 
 	mcp.registerTool(
@@ -80,7 +78,7 @@ function createMcpServer() {
 		},
 		async ({ command }) => ({
 			content: [
-				{ type: "text", text: await sendAction("execute", { command }) },
+				{ type: "text", text: await sendAction("execute", { command }, apiUrl) },
 			],
 		}),
 	);
@@ -104,7 +102,7 @@ function createMcpServer() {
 						path,
 						start_line,
 						end_line: toNullable(end_line),
-					}),
+					}, apiUrl),
 				},
 			],
 		}),
@@ -133,7 +131,7 @@ function createMcpServer() {
 						mode,
 						start_line: toNullable(start_line),
 						end_line: toNullable(end_line),
-					}),
+					}, apiUrl),
 				},
 			],
 		}),
@@ -153,11 +151,12 @@ export default async function handler(request) {
 	}
 
 	try {
+		const apiUrl = request.headers.get("X-Api-Url");
 		const transport = new WebStandardStreamableHTTPServerTransport({
 			sessionIdGenerator: undefined,
 			enableJsonResponse: true,
 		});
-		const mcp = createMcpServer();
+		const mcp = createMcpServer(apiUrl);
 
 		await mcp.connect(transport);
 		return await transport.handleRequest(request);
