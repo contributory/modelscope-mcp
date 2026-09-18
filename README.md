@@ -1,84 +1,69 @@
-# modelscope-mcp
+# modelscope-mcp for Anvil
 
-`ContainerAgent` is a stateless Streamable HTTP MCP server. It proxies container
-operations to an upstream agent service and Base64-encodes request and response
-payloads.
+A stateless Streamable HTTP MCP server for Anvil. It exposes the same
+`ContainerAgent` tools as the previous Node/Deno implementation and forwards
+container operations to a ModelScope-compatible agent endpoint.
 
-The project provides two entry points:
+## MCP endpoint
 
-- `server.js`: a standalone Node.js HTTP server.
-- `deno-server.js`: a web-standard Deno handler exported as a default function.
+After publishing the Anvil app, use:
 
-## Requirements
-
-- Node.js 20 or newer for `server.js`.
-- A Deno-compatible serverless runtime for `deno-server.js`.
-- An upstream agent endpoint supplied through the `API_URL` environment
-  variable. No upstream endpoint is embedded in the source code.
-
-## Installation
-
-Install the Node.js dependencies:
-
-```bash
-npm install
+```text
+https://YOUR-APP.anvil.app/mcp?api_url=https%3A%2F%2FYOUR-UPSTREAM-ENDPOINT
 ```
 
-## Node.js server
+If your MCP client can set custom headers, prefer:
 
-Set `API_URL` in the deployment environment, then start the server:
-
-```bash
-npm start
+```http
+X-Api-Url: https://YOUR-UPSTREAM-ENDPOINT
 ```
 
-The MCP endpoint is exposed at `/mcp`.
-
-### Environment variables
-
-| Variable  | Required | Default   | Description |
-| --------- | -------- | --------- | ----------- |
-| `API_URL` | Yes      | None      | Upstream agent action endpoint. |
-| `HOST`    | No       | `0.0.0.0` | HTTP bind address. |
-| `PORT`    | No       | `8080`    | HTTP listening port. |
-
-## Deno handler
-
-`deno-server.js` exports the request handler directly:
-
-```js
-export default async function handler(request) {
-  // Returns a web-standard Response.
-}
-```
-
-Configure `API_URL` as a deployment environment variable. The host platform
-must route MCP requests to `/mcp`.
+The header takes priority over the `api_url` query parameter.
 
 ## Tools
 
-- `execute_command(command)`: executes a shell command in the container and
-  returns its output.
-- `read_file(path, start_line = 1, end_line?)`: reads an inclusive, one-based
-  line range from a UTF-8 text file.
-- `write_file(path, content, mode = "insert" | "replace", start_line?, end_line?)`:
-  inserts content or replaces an inclusive line range.
+- `execute_command(command)` — execute a shell command in the remote container.
+- `read_file(path, start_line = 1, end_line?)` — read an inclusive one-based
+  line range.
+- `write_file(path, content, mode = "insert" | "replace", start_line?, end_line?)`
+  — insert content or replace an inclusive line range.
 
-## Testing
+The upstream gateway contract is unchanged. Each operation is JSON-encoded,
+Base64-encoded into `{"payload":"..."}`, sent with HTTP POST, then the
+`response` field is Base64-decoded back into the MCP tool result.
 
-Start the Node.js server and run the MCP protocol client:
+## Deploy on Anvil
 
-```bash
-npm test
-```
+1. In Anvil choose **Clone from GitHub** and select this repository.
+2. Keep the app on the Python 3.10 Standard server environment requested by
+   `anvil.yaml`.
+3. Publish the app.
+4. Configure the MCP URL as `https://YOUR-APP.anvil.app/mcp`, then supply the
+   upstream endpoint through `X-Api-Url` or `api_url`.
 
-Use `MCP_URL` to point the test client at a different MCP deployment. The test
-initializes the server, lists its tools, executes a command, and reads a file.
+There is no UI, Data Table, Users service, or stored credential requirement.
+
+## MCP transport
+
+The server is stateless and returns JSON responses for Streamable HTTP requests,
+matching the previous Deno implementation's `enableJsonResponse: true`
+behavior. It implements initialization, ping, tool discovery, tool invocation,
+notifications, and JSON-RPC errors needed by normal MCP clients.
+
+This Anvil build intentionally preserves the protocol generation used by the
+previous `@modelcontextprotocol/sdk@1.30.0` implementation. It negotiates
+`2025-11-25` and the older protocol revisions supported by that SDK.
+
+Anvil Server Modules are synchronous and have a finite request execution window.
+The upstream request therefore uses a 24-second timeout so the MCP endpoint can
+return a normal tool result instead of running until the Anvil server call is
+terminated.
 
 ## Security
 
-- Keep `API_URL` in the deployment environment rather than source control.
-- The tools provide command execution and file access. Deploy the server only
-  in an isolated container and restrict access to the MCP endpoint.
-- Use authentication and authorization at the gateway before exposing the
-  server publicly.
+The MCP tools provide arbitrary command execution and file access on the remote
+container. Do not point `api_url` at a privileged service you do not intend the
+MCP client to control.
+
+Passing `api_url` in the URL can expose it through logs or history. Prefer the
+`X-Api-Url` header when the client supports custom headers.
