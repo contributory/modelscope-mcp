@@ -7,3 +7,5 @@ __pycache__/
 node_modules/
 .env.local
 convex/_generated/ai/
+.agents/*
+.claude/*
