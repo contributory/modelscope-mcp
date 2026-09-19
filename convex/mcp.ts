@@ -25,11 +25,45 @@ const MODELSCOPE_USER_AGENT =
 export const TOOLS = [
   {
     name: "execute_command",
-    description: "Execute a shell command inside the container and return output.",
+    description:
+      "Execute a shell command inside the container.\n\n" +
+      "Waits up to wait_seconds (default 20, max 240) and returns the output if the " +
+      "command finishes in time. Otherwise the command keeps running in the " +
+      "background and a job_id is returned; use get_job to fetch the result or " +
+      "cancel_job to stop it.",
     inputSchema: {
       type: "object",
-      properties: { command: { type: "string" } },
+      properties: {
+        command: { type: "string" },
+        wait_seconds: { type: "integer", minimum: 0, default: 20 },
+      },
       required: ["command"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "get_job",
+    description:
+      "Get the result of a background job started by execute_command.\n\n" +
+      "Waits up to wait_seconds (default 20, max 240) for it to finish. If it is " +
+      "still running, returns the job_id again together with the output so far.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        job_id: { type: "string" },
+        wait_seconds: { type: "integer", minimum: 0, default: 20 },
+      },
+      required: ["job_id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "cancel_job",
+    description: "Stop a background job. The command and its child processes are killed.",
+    inputSchema: {
+      type: "object",
+      properties: { job_id: { type: "string" } },
+      required: ["job_id"],
       additionalProperties: false,
     },
   },
@@ -144,6 +178,14 @@ function emptyResponse(status = 202, extra: Record<string, string> = {}) {
   return new Response(null, { status, headers: { "Cache-Control": "no-store", ...extra } });
 }
 
+function omitNulls(args: Args): Args {
+  const out: Args = {};
+  for (const [key, value] of Object.entries(args)) {
+    if (value !== null && value !== undefined) out[key] = value;
+  }
+  return out;
+}
+
 async function sendAction(
   action: string,
   kwargs: Args,
@@ -154,7 +196,7 @@ async function sendAction(
     return "Error: X-Api-Url header or api_url query parameter is not configured";
   }
 
-  const payload = encodeBase64(JSON.stringify({ action, kwargs }));
+  const payload = encodeBase64(JSON.stringify({ action, kwargs: omitNulls(kwargs) }));
   const controller = new AbortController();
   let timedOut = false;
   const timer = setTimeout(() => {
@@ -199,7 +241,15 @@ async function toolCall(name: string, args: unknown, apiUrl: string | null, fetc
   let text: string;
   if (name === "execute_command") {
     const command = requiredString(args, "command");
-    text = await sendAction("execute", { command }, apiUrl, fetchImpl);
+    const waitSeconds = optionalInt(args, "wait_seconds");
+    text = await sendAction("execute", { command, wait_seconds: waitSeconds }, apiUrl, fetchImpl);
+  } else if (name === "get_job") {
+    const jobId = requiredString(args, "job_id");
+    const waitSeconds = optionalInt(args, "wait_seconds");
+    text = await sendAction("get_job", { job_id: jobId, wait_seconds: waitSeconds }, apiUrl, fetchImpl);
+  } else if (name === "cancel_job") {
+    const jobId = requiredString(args, "job_id");
+    text = await sendAction("cancel_job", { job_id: jobId }, apiUrl, fetchImpl);
   } else if (name === "read_file") {
     const path = requiredString(args, "path");
     const startLine = "start_line" in args ? args.start_line : 1;

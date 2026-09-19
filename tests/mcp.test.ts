@@ -11,6 +11,13 @@ function rpc(body: unknown, opts: { url?: string; headers?: Record<string, strin
   });
 }
 
+function decodeGateway(init: RequestInit | undefined) {
+  if (!init?.body || typeof init.body !== "string") {
+    throw new Error("expected a JSON body");
+  }
+  return JSON.parse(Buffer.from(JSON.parse(init.body).payload, "base64").toString());
+}
+
 function upstream(result: unknown) {
   return vi.fn(async () => Response.json({ response: b64(result) }));
 }
@@ -34,11 +41,11 @@ describe("mcp", () => {
     expect((await fallback.json()).result.protocolVersion).toBe("2025-11-25");
   });
 
-  it("lists the three tools", async () => {
+  it("lists the tools", async () => {
     const res = await handleMcpRequest(rpc({ jsonrpc: "2.0", id: 2, method: "tools/list" }));
     const names = (await res.json()).result.tools.map((t: { name: string }) => t.name);
-    expect(names).toEqual(["execute_command", "read_file", "write_file"]);
-    expect(TOOLS).toHaveLength(3);
+    expect(names).toEqual(["execute_command", "get_job", "cancel_job", "read_file", "write_file"]);
+    expect(TOOLS).toHaveLength(5);
   });
 
   it("returns 202 without a body for notifications", async () => {
@@ -58,8 +65,36 @@ describe("mcp", () => {
     expect((await res.json()).result.content[0].text).toBe("mcp-is-real\n");
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("https://gateway.example/run");
-    const sent = JSON.parse(Buffer.from(JSON.parse(init.body as string).payload, "base64").toString());
-    expect(sent).toEqual({ action: "execute", kwargs: { command: "echo mcp-is-real" } });
+    expect(decodeGateway(init)).toEqual({ action: "execute", kwargs: { command: "echo mcp-is-real" } });
+  });
+
+  it("forwards wait_seconds, get_job, and cancel_job to the gateway", async () => {
+    const fetchMock = upstream({ result: "ok" });
+    const headers = { "X-Api-Url": "https://gateway.example/run" };
+
+    await handleMcpRequest(
+      rpc(call("execute_command", { command: "sleep 1", wait_seconds: 5 }), { headers }),
+      fetchMock,
+    );
+    expect(decodeGateway(fetchMock.mock.calls[0]?.[1] as RequestInit)).toEqual({
+      action: "execute",
+      kwargs: { command: "sleep 1", wait_seconds: 5 },
+    });
+
+    await handleMcpRequest(
+      rpc(call("get_job", { job_id: "abc", wait_seconds: 0 }), { headers }),
+      fetchMock,
+    );
+    expect(decodeGateway(fetchMock.mock.calls[1]?.[1] as RequestInit)).toEqual({
+      action: "get_job",
+      kwargs: { job_id: "abc", wait_seconds: 0 },
+    });
+
+    await handleMcpRequest(rpc(call("cancel_job", { job_id: "abc" }), { headers }), fetchMock);
+    expect(decodeGateway(fetchMock.mock.calls[2]?.[1] as RequestInit)).toEqual({
+      action: "cancel_job",
+      kwargs: { job_id: "abc" },
+    });
   });
 
   it("prefers the X-Api-Url header over the query parameter", async () => {

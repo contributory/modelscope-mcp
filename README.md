@@ -23,18 +23,23 @@ Or pass the upstream through a header (preferred, keeps it out of logs):
 X-Api-Url: https://YOUR-UPSTREAM-ENDPOINT
 ```
 
-There is no stored credential and no database.
-
 ## Tools
 
-- `execute_command(command)`
+- `execute_command(command, wait_seconds = 20)` — wait up to `wait_seconds`
+  (max 240). Returns the command output if it finishes in time; otherwise the
+  command keeps running and a `job_id` is returned.
+- `get_job(job_id, wait_seconds = 20)` — wait again for a background job.
+  Still running → `job_id` plus output so far.
+- `cancel_job(job_id)` — kill the command and its child processes.
 - `read_file(path, start_line = 1, end_line?)`
 - `write_file(path, content, mode = "insert" | "replace", start_line?, end_line?)`
 
 ## Timeouts
 
-The upstream request is aborted after 5 minutes, matching the Go server's
-command timeout. Convex actions time out after 10 minutes.
+`execute_command` / `get_job` wait at most 240 seconds before returning a
+`job_id`. The Go server kills a command after 5 minutes. The MCP → upstream
+HTTP request is aborted after 5 minutes. Convex actions time out after 10
+minutes.
 
 ## Development
 
