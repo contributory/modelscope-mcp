@@ -1,63 +1,50 @@
-# modelscope-mcp for Anvil
+# modelscope-mcp
 
-A stateless Streamable HTTP MCP server for Anvil. It exposes the same
-`ContainerAgent` tools as the previous Node/Deno implementation and forwards
-container operations to a ModelScope-compatible agent endpoint.
+`ContainerAgent` is a stateless Streamable HTTP MCP server running as a
+[Convex](https://convex.dev) HTTP action. It proxies container operations to an
+upstream agent service and Base64-encodes request and response payloads.
 
-## MCP endpoint
+- `convex/mcp.ts`: MCP/JSON-RPC logic (pure `Request` -> `Response`, unit-tested).
+- `convex/http.ts`: routes `/mcp` to that logic as a Convex HTTP action.
+- `tests/mcp.test.ts`: Vitest suite.
 
-After publishing the Anvil app, use:
+## Endpoint
 
-```text
-https://YOUR-APP.anvil.app/mcp?api_url=https%3A%2F%2FYOUR-UPSTREAM-ENDPOINT
+After deploying, the MCP endpoint is served from the deployment's HTTP actions
+domain (`.convex.site`, not `.convex.cloud`):
+
+```
+https://YOUR-DEPLOYMENT.convex.site/mcp?api_url=https%3A%2F%2FYOUR-UPSTREAM-ENDPOINT
 ```
 
-If your MCP client can set custom headers, prefer:
+Or pass the upstream through a header (preferred, keeps it out of logs):
 
-```http
+```
 X-Api-Url: https://YOUR-UPSTREAM-ENDPOINT
 ```
 
-The header takes priority over the `api_url` query parameter.
+There is no stored credential and no database.
 
 ## Tools
 
-- `execute_command(command)` — execute a shell command in the remote container.
-- `read_file(path, start_line = 1, end_line?)` — read an inclusive one-based
-  line range.
+- `execute_command(command)`
+- `read_file(path, start_line = 1, end_line?)`
 - `write_file(path, content, mode = "insert" | "replace", start_line?, end_line?)`
-  — insert content or replace an inclusive line range.
 
-The upstream gateway contract is unchanged. Each operation is JSON-encoded,
-Base64-encoded into `{"payload":"..."}`, sent with HTTP POST, then the
-`response` field is Base64-decoded back into the MCP tool result.
+## Timeouts
 
-## Deploy on Anvil
+The upstream request is aborted after 5 minutes, matching the Go server's
+command timeout. Convex actions time out after 10 minutes.
 
-1. In Anvil choose **Clone from GitHub** and select this repository.
-2. Keep the app on the Python 3.10 Standard server environment requested by
-   `anvil.yaml`.
-3. Publish the app.
-4. Configure the MCP URL as `https://YOUR-APP.anvil.app/mcp`, then supply the
-   upstream endpoint through `X-Api-Url` or `api_url`.
+## Development
 
-There is no UI, Data Table, Users service, or stored credential requirement.
-
-## MCP transport
-
-The server is stateless and returns JSON responses for Streamable HTTP requests,
-matching the previous Deno implementation's `enableJsonResponse: true`
-behavior. It implements initialization, ping, tool discovery, tool invocation,
-notifications, and JSON-RPC errors needed by normal MCP clients.
-
-This Anvil build intentionally preserves the protocol generation used by the
-previous `@modelcontextprotocol/sdk@1.30.0` implementation. It negotiates
-`2025-11-25` and the older protocol revisions supported by that SDK.
-
-Anvil Server Modules are synchronous and have a finite request execution window.
-The upstream request therefore uses a 24-second timeout so the MCP endpoint can
-return a normal tool result instead of running until the Anvil server call is
-terminated.
+```bash
+npm install
+npm test
+npm run typecheck
+npx convex dev      # first run: log in and create/select a project
+npm run deploy      # npx convex deploy (needs CONVEX_DEPLOY_KEY in CI)
+```
 
 ## Security
 
